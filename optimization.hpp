@@ -1,5 +1,6 @@
 // (c) Yasuhiro Fujii <y-fujii@mimosa-pudica.net>, under MIT License.
 #include <random>
+#include <vector>
 #include <Eigen/Dense>
 
 namespace topt {
@@ -37,12 +38,13 @@ double golden_section_search(double x0, double x3, Functor f) {
 // ref. <http://www.scholarpedia.org/article/Nelder-Mead_algorithm>.
 template<int N, class Functor>
 Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Functor f) {
+	static_assert(N >= 2);
 	struct Vertex {
 		Vector<N> x;
 		double f;
 	};
 
-	std::array<Vertex, N + 1> vs;
+	std::vector<Vertex> vs(N + 1);
 	for (size_t i = 0; i < N; ++i) {
 		vs[i].x = x_min;
 		vs[i].x(i) = x_max(i);
@@ -55,7 +57,7 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 		size_t best = 0;
 		size_t worst = 1;
 		size_t worse = 2;
-		for (size_t j = 0; j <= N; ++j) {
+		for (size_t j = 0; j < vs.size(); ++j) {
 			if (vs[j].f < vs[best].f) {
 				best = j;
 			}
@@ -78,7 +80,7 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 
 		// XXX: O(N^2).
 		Vector<N> c = Vector<N>::Zero();
-		for (size_t j = 0; j <= N; ++j) {
+		for (size_t j = 0; j < vs.size(); ++j) {
 			if (j == worst) {
 				continue;
 			}
@@ -111,7 +113,7 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 			}
 			else {
 				// shrinkage. O(N^2).
-				for (size_t j = 0; j <= N; ++j) {
+				for (size_t j = 0; j < vs.size(); ++j) {
 					if (j == best) {
 						continue;
 					}
@@ -125,13 +127,14 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 
 template<int N, class Rng, class Functor>
 Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Rng& rng, Functor f) {
+	static_assert(N >= 1);
 	struct Vertex {
 		Vector<N> x;
 		double f;
 	};
 
 	std::uniform_real_distribution<double> dist_u01(0.0, 1.0);
-	std::array<Vertex, 12 * N> vs;
+	std::vector<Vertex> vs(12 * N);
 	for (Vertex& v: vs) {
 		auto const r = Vector<N>::NullaryExpr([&]{ return dist_u01(rng); });
 		v.x = x_min + (x_max - x_min).cwiseProduct(r);
@@ -148,7 +151,7 @@ Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max,
 			worst = j;
 		}
 	}
-	assert(vs.size() == 1 || best != worst);
+	assert(best != worst);
 
 	std::uniform_int_distribution<size_t> dist_ia(0, vs.size() - 2);
 	std::uniform_int_distribution<size_t> dist_ib(0, vs.size() - 3);
