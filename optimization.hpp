@@ -36,7 +36,7 @@ double golden_section_search(double x0, double x3, Functor f) {
 
 // ref. <http://www.scholarpedia.org/article/Nelder-Mead_algorithm>.
 template<int N, class Functor>
-Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double f_tol, Functor f) {
+Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Functor f) {
 	struct Vertex {
 		Vector<N> x;
 		double f;
@@ -124,7 +124,7 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 }
 
 template<int N, class Rng, class Functor>
-Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double f_tol, Rng& rng, Functor f) {
+Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Rng& rng, Functor f) {
 	struct Vertex {
 		Vector<N> x;
 		double f;
@@ -133,7 +133,7 @@ Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max,
 	std::uniform_real_distribution<double> dist_u01(0.0, 1.0);
 	std::array<Vertex, 12 * N> vs;
 	for (Vertex& v: vs) {
-		auto r = Vector<N>::NullaryExpr([&]{ return dist_u01(rng); });
+		auto const r = Vector<N>::NullaryExpr([&]{ return dist_u01(rng); });
 		v.x = x_min + (x_max - x_min).cwiseProduct(r);
 		v.f = f(v.x);
 	}
@@ -177,7 +177,7 @@ Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max,
 			if (ic == ib) {
 				ic = vs.size() - 3;
 			}
-			size_t ix = dist_ix(rng);
+			size_t const ix = dist_ix(rng);
 			Vertex v;
 			for (size_t k = 0; k < N; ++k) {
 				if (dist_u01(rng) < 0.5 || k == ix) {
@@ -210,16 +210,16 @@ Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max,
 
 
 template<int N, class Rng, class Functor>
-Vector<N> evolution_strategy_simple(Vector<N> x, double sigma, double sigma_tol, Rng& rng, Functor f) {
-	double m_sigma_accept = std::exp(+1.0 / (1.0 * 256.0 * N));
-	double m_sigma_reject = std::exp(-1.0 / (4.0 * 256.0 * N));
+Vector<N> evolution_strategy_simple(Vector<N> x, double sigma, double const sigma_tol, Rng& rng, Functor f) {
+	double const m_sigma_accept = std::exp(+1.0 / (1.0 * 64.0 * N));
+	double const m_sigma_reject = std::exp(-1.0 / (4.0 * 64.0 * N));
 
 	std::normal_distribution<double> dist_n01;
 	double fx = f(x);
 	while (sigma > sigma_tol) {
-		auto n01 = Vector<N>::NullaryExpr([&]{ return dist_n01(rng); });
-		Vector<N> y = x + sigma * n01;
-		double fy = f(y);
+		auto const n01 = Vector<N>::NullaryExpr([&]{ return dist_n01(rng); });
+		Vector<N> const y = x + sigma * n01;
+		double const fy = f(y);
 		if (fy < fx) {
 			x = y;
 			fx = fy;
