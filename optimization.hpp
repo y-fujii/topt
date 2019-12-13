@@ -271,7 +271,7 @@ Vertex<N> evolution_strategy_simple(Vector<N> const& x, double sigma, double con
 }
 
 template<int N, class Rng, class Functor>
-Vertex<N> simulated_annealing(Vector<N> x, double sigma, double sigma_tol, double const k, Rng& rng, Functor f) {
+Vertex<N> simulated_annealing(Vector<N> const& x, double sigma, double sigma_tol, double const k, Rng& rng, Functor f) {
 	double const m_beta = std::exp(1.0 / (k * N));
 	double const m_sigma_accept = std::exp(+1.0 / (1.0 * 64.0 * N));
 	double const m_sigma_reject = std::exp(-1.0 / (4.0 * 64.0 * N));
@@ -282,9 +282,9 @@ Vertex<N> simulated_annealing(Vector<N> x, double sigma, double sigma_tol, doubl
 	while (sigma > sigma_tol) {
 		auto const n01 = Vector<N>::NullaryExpr([&]{ return dist_n01(rng); });
 		Vertex<N> w;
-		w.x = x + sigma * n01;
+		w.x = v.x + sigma * n01;
 		w.f = f(w.x);
-		if (rng() < rng.max() * exp(beta * (v.x - w.x))) {
+		if (rng() < rng.max() * std::exp(beta * (v.f - w.f))) {
 			v = w;
 			sigma *= m_sigma_accept;
 		}
