@@ -9,6 +9,12 @@ namespace topt {
 template<int N>
 using Vector = Eigen::Matrix<double, N, 1>;
 
+template<int N>
+struct Vertex {
+	Vector<N> x;
+	double f;
+};
+
 template<int N, class Derived>
 void kahan_add(Vector<N>& x0, Vector<N>& x1, Eigen::MatrixBase<Derived> const& y0) {
 	Vector<N> y = x1 + y0;
@@ -45,16 +51,11 @@ double golden_section_search(double x0, double x3, Functor f) {
 
 // ref. <http://www.scholarpedia.org/article/Nelder-Mead_algorithm>.
 template<int N, class Functor>
-Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Functor f) {
+Vertex<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Functor f) {
 	static_assert(N >= 2);
 	constexpr bool on_algorithm = N > 8; // XXX: needs benchmarks.
 
-	struct Vertex {
-		Vector<N> x;
-		double f;
-	};
-
-	std::vector<Vertex, Eigen::aligned_allocator<Vertex>> vs(1 + N);
+	std::vector<Vertex<N>, Eigen::aligned_allocator<Vertex<N>>> vs(1 + N);
 	for (size_t i = 0; i < N; ++i) {
 		vs[i].x = x_min;
 		vs[i].x(i) = x_max(i);
@@ -97,7 +98,7 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 		//assert(best != worse && worse != worst && worst != best);
 
 		if (((vs[worst].x - vs[best].x).array().abs() <= x_tol.array()).all() && vs[worst].f - vs[best].f <= f_tol) {
-			return vs[best].x;
+			return vs[best];
 		}
 
 		if constexpr (on_algorithm) {
@@ -116,12 +117,12 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 		Vector<N> c = (1.0 / N) * s0;
 
 		// reflection.
-		Vertex vr;
+		Vertex<N> vr;
 		vr.x = 2.0 * c - vs[worst].x;
 		vr.f = f(vr.x);
 		if (vr.f < vs[best].f) {
 			// expansion.
-			Vertex ve;
+			Vertex<N> ve;
 			ve.x = 2.0 * vr.x - c;
 			ve.f = f(ve.x);
 			vs[worst] = ve.f < vr.f ? ve : vr;
@@ -131,8 +132,8 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 		}
 		else {
 			// contraction.
-			Vertex const& vm = vr.f < vs[worst].f ? vr : vs[worst];
-			Vertex vc;
+			Vertex<N> const& vm = vr.f < vs[worst].f ? vr : vs[worst];
+			Vertex<N> vc;
 			vc.x = 0.5 * (vm.x + c);
 			vc.f = f(vc.x);
 			if (vc.f < vm.f) {
@@ -164,16 +165,12 @@ Vector<N> nelder_mead(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> 
 }
 
 template<int N, class Rng, class Functor>
-Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Rng& rng, Functor f) {
+Vertex<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max, Vector<N> const& x_tol, double const f_tol, Rng& rng, Functor f) {
 	static_assert(N >= 1);
-	struct Vertex {
-		Vector<N> x;
-		double f;
-	};
 
 	std::uniform_real_distribution<double> dist_u01(0.0, 1.0);
-	std::vector<Vertex, Eigen::aligned_allocator<Vertex>> vs(12 * N);
-	for (Vertex& v: vs) {
+	std::vector<Vertex<N>, Eigen::aligned_allocator<Vertex<N>>> vs(12 * N);
+	for (Vertex<N>& v: vs) {
 		auto const r = Vector<N>::NullaryExpr([&]{ return dist_u01(rng); });
 		v.x = x_min + (x_max - x_min).cwiseProduct(r);
 		v.f = f(v.x);
@@ -219,7 +216,7 @@ Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max,
 				ic = vs.size() - 3;
 			}
 			size_t const ix = dist_ix(rng);
-			Vertex v;
+			Vertex<N> v;
 			for (size_t k = 0; k < N; ++k) {
 				if (dist_u01(rng) < 0.5 || k == ix) {
 					v.x(k) = vs[ia].x(k) + 0.5 * (vs[ib].x(k) - vs[ic].x(k));
@@ -246,49 +243,49 @@ Vector<N> differential_evolution(Vector<N> const& x_min, Vector<N> const& x_max,
 		}
 	}
 
-	return vs[best].x;
+	return vs[best];
 }
 
 
 template<int N, class Rng, class Functor>
-Vector<N> evolution_strategy_simple(Vector<N> x, double sigma, double const sigma_tol, Rng& rng, Functor f) {
+Vertex<N> evolution_strategy_simple(Vector<N> const& x, double sigma, double const sigma_tol, Rng& rng, Functor f) {
 	double const m_sigma_accept = std::exp(+1.0 / (1.0 * 64.0 * N));
 	double const m_sigma_reject = std::exp(-1.0 / (4.0 * 64.0 * N));
 
 	std::normal_distribution<double> dist_n01;
-	double fx = f(x);
+	Vertex<N> v = {x, f(x)};
 	while (sigma > sigma_tol) {
 		auto const n01 = Vector<N>::NullaryExpr([&]{ return dist_n01(rng); });
-		Vector<N> const y = x + sigma * n01;
-		double const fy = f(y);
-		if (fy < fx) {
-			x = y;
-			fx = fy;
+		Vertex<N> w;
+		w.x = v.x + sigma * n01;
+		w.f = f(w.x);
+		if (w.f < v.f) {
+			v = w;
 			sigma *= m_sigma_accept;
 		}
 		else {
 			sigma *= m_sigma_reject;
 		}
 	}
-	return x;
+	return v;
 }
 
 template<int N, class Rng, class Functor>
-Vector<N> simulated_annealing(Vector<N> x, double sigma, double sigma_tol, double const k, Rng& rng, Functor f) {
+Vertex<N> simulated_annealing(Vector<N> x, double sigma, double sigma_tol, double const k, Rng& rng, Functor f) {
 	double const m_beta = std::exp(1.0 / (k * N));
 	double const m_sigma_accept = std::exp(+1.0 / (1.0 * 64.0 * N));
 	double const m_sigma_reject = std::exp(-1.0 / (4.0 * 64.0 * N));
 
 	std::normal_distribution<double> dist_n01;
 	double beta = 1.0;
-	double fx = f(x);
+	Vertex<N> v = {x, f(x)};
 	while (sigma > sigma_tol) {
 		auto const n01 = Vector<N>::NullaryExpr([&]{ return dist_n01(rng); });
-		Vector<N> const y = x + sigma * n01;
-		double const fy = f(y);
-		if (rng() < rng.max() * exp(beta * (fx - fy))) {
-			x = y;
-			fx = fy;
+		Vertex<N> w;
+		w.x = x + sigma * n01;
+		w.f = f(w.x);
+		if (rng() < rng.max() * exp(beta * (v.x - w.x))) {
+			v = w;
 			sigma *= m_sigma_accept;
 		}
 		else {
@@ -296,7 +293,7 @@ Vector<N> simulated_annealing(Vector<N> x, double sigma, double sigma_tol, doubl
 		}
 		beta *= m_beta;
 	}
-	return x;
+	return v;
 }
 
 // TODO: CMA-ES.
